@@ -1,12 +1,15 @@
 'Othello Max by Stephane Edwardson (Lodovik)
 
+font 1,1       'Workaround for bug in MMB4W
+changepalette  'Workaround for bug in MMB4W
+
 mode 12,8  '960x540, 256 colors
 OPTION ANGLE DEGREES
 
 CONST PROGNAME$ = "OTHELLO MAX"
 CONST AUTHOR$ = "Stephane Edwardson"
 CONST YEAR$ = "2022"
-CONST VER$ = "1.0"
+CONST VER$ = "1.0.2"
 CONST BRDSQUARE = int(MM.VRES-100)/8  'Size of a square on the board
 CONST BRDPC = BRDSQUARE / 2.5           'Size of pieces
 CONST BKCOL = map(241)                'Screen background color
@@ -243,6 +246,7 @@ do
     statusprint
 
     k$=""
+    emptykeybuf   'Empty keyboard buffer
     do while k$<>"enter"
       k$=getinput$()
     loop 
@@ -262,6 +266,84 @@ loop
 
 
 '--------------------SUBS & FUNCS---------------------------
+
+sub undomove        'Undo a move (opponent move(s) and player move before
+  local m,lm,p1,z
+
+  m  = moves(0,0)    '# of moves played
+
+  if m > 1 then        'At least 2 moves played? 
+    p1 = plyr          'Player currently undoing the move
+    lm = 0
+    for z = 1 to m     'Searches for last move (could be the one just before)
+      if moves(z,22) = p1 then lm = z
+    next z
+    if lm > 0 then
+      for z = m to lm step -1
+        bm = moves(z,21)
+        clearpiece(bm)
+        pause 500
+        back1move
+        drawallpieces
+        pause 1000
+      next z
+    end if
+  end if
+
+end sub
+
+
+
+
+sub clearpiece(p)            'Clears one piece with animation
+  local cx,cy,z
+
+
+  for z=BRDPC to 1 step -1
+    cx = SquareX(p) + BRDSQUARE / 2 - 1
+    cy = SquareY(p) + BRDSQUARE / 2 - 1
+    circle cx,cy,z,2,,BRDCOL
+    pause ANIMSPD 
+  next z
+      
+end sub
+
+
+
+sub drawallpieces 'Draw all the player pieces at once with animation (for undo move)
+  local x,y,z,c,p
+
+
+  for z = 1 to BRDPC
+    for p = 1 to 64
+      x = SquareX(p) + BRDSQUARE / 2 - 1
+      y = SquareY(p) + BRDSQUARE / 2 - 1
+      c = board(p) 
+
+      select case c
+      case 1
+        if z = BRDPC then
+          circle x,y,z,,,P2COL,P1COL
+        else
+          circle x,y,z,,,P1COL,P1COL
+        end if
+      case 2
+        if z = BRDPC then
+          circle x,y,z,,,P1COL,P2COL
+        else
+          circle x,y,z,,,P2COL,P2COL
+        end if
+      case else
+        circle x,y,z,,,BRDCOL,BRDCOL
+      end select  
+    next p
+    pause ANIMSPD/2
+  next z
+
+end sub
+
+
+
 
 
 sub showhelp              'Show help screen in the center of the board
@@ -297,6 +379,7 @@ sub showhelp              'Show help screen in the center of the board
 
   pt = 1              'Pointer to the first line to display at the top
   upd = 1             'Update flag
+  emptykeybuf         'Empty keyboard buffer
   do while k$ <> "enter" and k$ <> "f1"
     k$ = getinput$()
 
@@ -1261,6 +1344,7 @@ sub selectplayers 'Select players before game; opening book menu added and hacke
   ng = 11
   ct = 0
 
+  emptykeybuf   'Empty keyboard buffer
   do while k$ <> "enter"
  
     if cnt$ <> ctrl$ then
@@ -1912,6 +1996,7 @@ function getmove(lm,c)  'Player C inputs move, last move lm used as a start poin
     co = P2COL
   end if  
   
+  emptykeybuf     'Empty keyboard buffer
   do
     x = SquareX(mv)
     y = SquareY(mv)
@@ -1940,9 +2025,14 @@ function getmove(lm,c)  'Player C inputs move, last move lm used as a start poin
         case "enter"
           if moveisvalid(cr2mov(px,py),c) = 1 then xit = cr2mov(px,py) 
         case "back"
-          back1move
-          redrawboard          
+          blit write #1,x,y
+          undomove
+          k$ = ""
+          showvalidmoves
           blit read #1,x,y,BRDSQUARE, BRDSQUARE
+          displayscore
+          box x+1,y+1,BRDSQUARE-2,BRDSQUARE-2,2,co
+          emptykeybuf
       end select
     loop
     k$ = ""
@@ -1955,9 +2045,20 @@ end function
 
 
 
+sub emptykeybuf
+  local b$
+
+  do
+    b$ = inkey$    
+  loop until b$=""
+
+end sub
+
+
+
 
 function getinput$()  'Get input from keyboard and virtualize it
-  local k,i$,j,jx,jy,b$
+  local k,i$,j,jx,jy
   
   k = asc(inkey$)
   select case k
@@ -1971,7 +2072,6 @@ function getinput$()  'Get input from keyboard and virtualize it
       i$ = "right"
     case 13, 32, 10
       i$ = "enter"
-      b$ = inkey$
     case 27
       i$ = "esc"
     case 8
@@ -1983,6 +2083,8 @@ function getinput$()  'Get input from keyboard and virtualize it
     case 157
       prtscr
       i$=""
+    'case 156        'Reset
+    '  run
     case else
       i$ = ""
   end select
@@ -3137,7 +3239,7 @@ data "         of time on  anything but  a fast"
 data "         computer  running   MMBasic  for"
 data "         Windows.  It's  far too  slow on"
 data "         CMM2 to be enjoyable. This level"
-data "         looks at 6 movea ahead  during a"
+data "         looks at 6 moves ahead  during a"
 data "         game and 11 at the end.         "
 data "                                         "
 data "You can select two humans as the players,"
@@ -3183,6 +3285,14 @@ data "Keyboard and controllers  can be  used at"
 data "the same  time,  which is  useful for two"
 data "players games.                           "
 data "                                         "
+data "During  play,  you  can  undo a  move  by"
+data "pressing  the [BACKSPACE]  key. Note that"
+data "this will undo your  opponent's last move"
+data "and then undo the move you  played before"
+data "that. If  your  opponent  played  several"
+data "consecutive moves, they will all be taken"
+data "back so you  can replay  the move you did"
+data "just before this sequence.               "
 data "                                         "
 data "Development notes                        "
 data "=================                        "
