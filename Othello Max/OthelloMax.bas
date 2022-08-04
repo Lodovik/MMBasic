@@ -1,15 +1,7 @@
 'Othello Max by Stephane Edwardson (Lodovik)
 
-
-'                MMBasic for Windows specifics
-'--------------------------------------------------------
-font 1,1        'Workaround for bug in MMB4W
-changepalette   'Workaround for bug in MMB4W
-on error skip 1 'For MMB4W only; not supported on CMM2
-randomize timer 'MMB4W: seed the random number generator
-'--------------------------------------------------------
-
-
+font 1,1       'Workaround for bug in MMB4W
+changepalette  'Workaround for bug in MMB4W
 
 mode 12,8  '960x540, 256 colors
 OPTION ANGLE DEGREES
@@ -17,7 +9,7 @@ OPTION ANGLE DEGREES
 CONST PROGNAME$ = "OTHELLO MAX"
 CONST AUTHOR$ = "Stephane Edwardson"
 CONST YEAR$ = "2022"
-CONST VER$ = "1.0.3"
+CONST VER$ = "1.0.2"
 CONST BRDSQUARE = int(MM.VRES-100)/8  'Size of a square on the board
 CONST BRDPC = BRDSQUARE / 2.5           'Size of pieces
 CONST BKCOL = map(241)                'Screen background color
@@ -70,13 +62,6 @@ dim vmtbl(2187,2)                      'Tables of valid moves ,1 = white; ,2 = b
                                         
 dim base3(7,2)                         'Base3 values for faster conversion of board positions
 
-
-dim movsort(61,61)                      'Sorted moves to improve AB searches cutoff by looking at good positions first
-                                        'List has one useless center position to permit scan after 60 moves to check if game is over
-                                        'For each move the list of free squares is updated to the next index, removing the played move
-                                        'movsort(0,1...60) contains the list of initial free squares (before move #1)
-                                        'movsort(1,1...59) contains the updated list after a move (after move #1)
-                                        'movsort(0,0) contains the number of moves played
 
 dim movlist(MAXSRCHD,30,2)              'List of possible moves at specified depth
                                         'movlist(xxx,0,P)    = # of possible moves for player P
@@ -138,21 +123,13 @@ dim obmenu$(4)                              'Opening book choices
 
 
 dim obsel(1) = (4,2)                        '(0)=# of choices, (1)=default selection
-
-
-
-
 '--------------------MAIN---------------------------
-
-
-
 
 changepalette
 
 initbase3
 initsearcharray
 initmovetables
-initmovesortlist
 initboard
 initpatterns
 checkctrl
@@ -164,7 +141,6 @@ do
   lastscore$ = "0000"
   initgame
   initsquarevalues
-  movsort(0,0) = 0  'Initial list of possible moves
   plyr = 2        'Turn
   depth = 0
   showvalidmoves
@@ -206,7 +182,6 @@ do
       end select
       f = playmove(m,plyr)
       fliplastmove
-      updatesortlist(m)
       findopening
       pause 500
     else
@@ -251,7 +226,6 @@ do
      end select
       f = playmove(m,plyr)
       fliplastmove
-      updatesortlist(m)
       findopening
       pause 500
     else
@@ -293,58 +267,24 @@ loop
 
 '--------------------SUBS & FUNCS---------------------------
 
-sub initmovesortlist    'Init the list of free square, sorted for best AB pruning
-  local z
-
-  restore MoveOrder
-  for z = 1 to 61
-    read movsort(0,z)
-  next z
-
-end sub
-
-
-
-sub updatesortlist(m)   'Remove a played move from the list of free quares
-
-  nmv = movsort(0,0)
-  c = 0
-
-  for z = 1 to 61-nmv
-    if movsort(nmv,z) <> m then
-      inc c
-      movsort(nmv+1,c) = movsort(nmv,z) 'Create new list
-    end if
-  next z 
-  inc movsort(0,0)
-
-
-end sub
-
-
-
-
-
-
 sub undomove        'Undo a move (opponent move(s) and player move before
   local m,lm,p1,z
 
-  m  = moves(0,0)       '# of moves played
+  m  = moves(0,0)    '# of moves played
 
-  if m > 1 then         'At least 2 moves played? 
-    p1 = plyr           'Player currently undoing the move
+  if m > 1 then        'At least 2 moves played? 
+    p1 = plyr          'Player currently undoing the move
     lm = 0
-    for z = 1 to m      'Searches for last move (could be the one just before)
+    for z = 1 to m     'Searches for last move (could be the one just before)
       if moves(z,22) = p1 then lm = z
     next z
     if lm > 0 then
       for z = m to lm step -1
-        bm = moves(z,21)                  'Most recent move first
-        clearpiece(bm)                    'Remove piece
+        bm = moves(z,21)
+        clearpiece(bm)
         pause 500
-        back1move                         'Unplay move and restore state
-        drawallpieces                     'Redraw pieces on screen
-        movsort(0,0) = movsort(0,0) - 1   'Update counter for sorted free square lists
+        back1move
+        drawallpieces
         pause 1000
       next z
     end if
@@ -1899,14 +1839,11 @@ end sub
 
 
 function getmovelist(d)   'Return the number of possible moves, and the list of them in movlist(d, moves, player)
-  local x,y,mvs1,mvs2,po,pat,npc,flip1,flip2,dir,z,ms
+  local x,y,mvs1,mvs2,po,pat,npc,flip1,flip2,dir
 
-  mvs1  = 0           'Number of possible moves from this position for P1
-  mvs2  = 0           '....P2
-  ms = movsort(0,0)   'Number of moves played (search not included) and index of non played square list
-
-  for z = 1 to 61-ms
-    po = movsort(ms,z)
+  mvs1  = 0   'Number of possible moves from this position for P1
+  mvs2  = 0   '....P2
+  for po = 1 to 64
     if board(po) = 0 then   'Check only empty squares
       flip1 = 0
       flip2 = 0
@@ -1917,7 +1854,7 @@ function getmovelist(d)   'Return the number of possible moves, and the list of 
             pat = pat + base3(npc,board(srch(po,dir,npc)))
         next npc 
         flip1 = flip1 + vmtbl(pat,1)    'Number of pieces flipped by player 1
-        flip2 = flip2 + vmtbl(pat,2)    'Number of pieces flipped by player 2
+        flip2 = flip2 + vmtbl(pat,2)    'Number of pieces flipped by player 1
       next dir
 
       if flip1 > 0 then    'At least a piece flipped for P1?
@@ -1934,7 +1871,7 @@ function getmovelist(d)   'Return the number of possible moves, and the list of 
 
     end if
 
-  next z
+  next po
   movlist(d,0,1) = mvs1         'store # of P1 moves into index 0 of movlist
   movlist(d,0,2) = mvs2         'store # of P2 moves into index 0 of movlist
   movlist(d,0,0) = mvs1 + mvs2  'Store # of total moves (if = 0 then game is over)
@@ -1947,30 +1884,33 @@ end function
 
 
 
-function getmovelistfast(p,d)   'p=player, d=depth; Faster player p, return the number of possible moves -> movlist(depth,moves)
+function getmovelistfast(p,d)   'Faster(?) Return the number of possible moves, and the list of them in movlist(depth,moves)
   local x,y,mvs,po,pat,npc,flip
 
-  ms = movsort(0,0)             'Number of moves played (search not included) and index of non played square list
+  mvs = 0   'Number of possible moves from this position
+  for po = 1 to 64
+    if board(po) = 0 then   'Check only empty squares
+      flip = 0
 
-  mvs = 0                       'Number of possible moves from this position
-  for z = 1 to 61-ms
-    po = movsort(ms,z)
-    if board(po) = 0 then               'Check only empty squares
-      for dir = 1 to srch(po,0,0)       'For each valid direction
+      for dir = 1 to srch(po,0,0)    'For each valid direction
         pat = board(srch(po,dir,1))
         for npc = 2 to srch(po,dir,0)   'Other squares to add to the pattern using pre-calculated search limits
             pat = pat + base3(npc,board(srch(po,dir,npc)))
         next npc 
-        if vmtbl(pat,p) > 0 then
-          inc mvs                       'One more square to add to the list of possible moves
-          movlist(d,mvs,p) = po
-          'movflip(d,mvs,p) = 1
+        flip = flip + vmtbl(pat,p)    'Number of pieces flipped
+        if flip > 0 then
+          inc mvs           'One more square to add to the list of possible moves
+          movlist(d,mvs) = po
+          movflip(d,mvs) = flip
           exit for
         end if
       next dir
+
+
     end if
-  next z
-  movlist(d,0,p) = mvs    'store # of moves into index 0 of movlist
+
+  next po
+  movlist(d,0) = mvs    'store # of moves into index 0 of movlist
   getmovelistfast = mvs
 
 end function
@@ -2579,6 +2519,7 @@ sub initmovetables     'Init of valid moves tables
     if right$(a$,7) = "2111111" then vmtbl(z,2) = 6
   next
 end sub
+
 
 
 
@@ -3192,19 +3133,6 @@ data "212",-200
 data "220",150
 data "221",200
 data "222",-600
-
-
-MoveOrder:    'Search for moves in this order to maximise AB cutting
-data 01,08,57,64
-data 03,06,17,24,41,48,59,62
-data 19,22,43,46
-data 04,05,25,32,33,40,60,61
-data 20,21,27,30,35,38,44,45
-data 12,13,26,31,34,39,52,53
-data 11,14,18,23,42,47,51,54
-data 02,07,09,16,49,56,58,63
-data 10,15,50,55
-data 28,29,36,37 'Starting position never played (for completeness)
 
 
 HelpText:
